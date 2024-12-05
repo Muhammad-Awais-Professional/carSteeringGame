@@ -23,6 +23,10 @@ enum class GameState
 const int GYRO_Y_INDEX = 26;
 const int GYRO_Z_INDEX = 27;
 
+// Define maximum zoom out and buffer based on screen size
+const float MAX_ZOOM_OUT = 2.0f; // Maximum zoom out factor
+const float BUFFER_Y_FACTOR = 1.0f; // Factor to calculate BUFFER_Y based on screen height
+
 vector<string> split(const string &s, char delimiter)
 {
     vector<string> tokens;
@@ -104,11 +108,14 @@ int main(int argc, char *argv[])
     window.setFramerateLimit(60);
 
     float roadWidth = screenSize.x * 0.5f;
-    float roadHeight = static_cast<float>(screenSize.y);
-    roadHeight*=2;
+
+    // <-- Added: Define buffer and road height based on screen size and MAX_ZOOM_OUT
+    const float BUFFER_Y = screenSize.y * BUFFER_Y_FACTOR; // Buffer above and below the screen
+    float roadHeight = screenSize.y * MAX_ZOOM_OUT + 2.0f * BUFFER_Y; // Total road height
+
     RectangleShape road(Vector2f(roadWidth, roadHeight));
     road.setFillColor(Color(50, 50, 50));
-    road.setPosition((screenSize.x - roadWidth) / 2.0f, 0.0f);
+    road.setPosition((screenSize.x - roadWidth) / 2.0f, -BUFFER_Y); // <-- Positioned above the screen with buffer
 
     float laneMarkWidth = roadWidth * 0.025f;
     float laneMarkHeight = screenSize.y * 0.083f;
@@ -116,7 +123,8 @@ int main(int argc, char *argv[])
     vector<RectangleShape> laneMarks;
     float laneMarkX = road.getPosition().x + roadWidth / 2.0f - laneMarkWidth / 2.0f;
 
-    for (float y = 0; y < screenSize.y; y += laneMarkHeight + laneMarkSpacing)
+    // <-- Modified: Create lane marks starting from -BUFFER_Y to roadHeight - BUFFER_Y
+    for (float y = -BUFFER_Y; y < roadHeight - BUFFER_Y; y += laneMarkHeight + laneMarkSpacing)
     {
         RectangleShape mark(Vector2f(laneMarkWidth, laneMarkHeight));
         mark.setFillColor(Color::White);
@@ -220,6 +228,9 @@ int main(int argc, char *argv[])
                               Vector2f(buttonWidth, buttonHeight),
                               Vector2f((screenSize.x - buttonWidth) / 2.0f,
                                        screenSize.y * 0.4f + buttonHeight + buttonSpacing));
+
+    // <-- Added: Define roadSpeed for scrolling
+    float roadSpeed = 300.0f; // Adjust as needed
 
     while (window.isOpen())
     {
@@ -467,6 +478,7 @@ int main(int argc, char *argv[])
 
                 float deltaTime = gameClock.restart().asSeconds();
 
+                // Move the car based on gyroZ
                 float movement = static_cast<float>(gyroZ) * movementScalingFactor * deltaTime;
                 car.move(movement, 0.0f);
 
@@ -476,33 +488,51 @@ int main(int argc, char *argv[])
                 if (carX > road.getPosition().x + roadWidth - car.getGlobalBounds().width)
                     car.setPosition(road.getPosition().x + roadWidth - car.getGlobalBounds().width, car.getPosition().y);
 
+                // <-- Modified: Update currentZoom based on gyroY
                 currentZoom += static_cast<float>(gyroY) * zoomSpeed * deltaTime;
-                currentZoom = clamp(currentZoom, 0.5f, 2.0f);
+                currentZoom = clamp(currentZoom, 0.5f, MAX_ZOOM_OUT); // Ensure it doesn't exceed MAX_ZOOM_OUT
 
+                // Update the view
                 View view = window.getView();
                 view.setSize(screenSize.x * currentZoom, screenSize.y * currentZoom);
+                view.setCenter(screenSize.x / 2.0f, screenSize.y / 2.0f); // Keep the view centered
                 window.setView(view);
 
+                // Spawn new obstacles at intervals
                 if (obstacleClock.getElapsedTime().asSeconds() > obstacleSpawnTime)
                 {
                     Sprite obstacle(obstacleTexture);
 
                     float xPos = road.getPosition().x + static_cast<float>(rand()) / RAND_MAX * (roadWidth - obstacleWidth);
                     obstacle.setScale(obstacleWidth / obstacleTexture.getSize().x, obstacleHeight / obstacleTexture.getSize().y);
-                    obstacle.setPosition(xPos, -obstacleHeight);
+                    obstacle.setPosition(xPos, -BUFFER_Y - obstacleHeight); // <-- Start above the road with buffer
                     obstacles.push_back(obstacle);
                     obstacleClock.restart();
                 }
 
-                for (auto &obstacle : obstacles)
+                // <-- Modified: Move lane marks downward to simulate road movement
+                for (auto &mark : laneMarks)
                 {
-                    obstacle.move(0.0f, 300.0f * deltaTime);
+                    mark.move(0.0f, roadSpeed * deltaTime);
+                    if (mark.getPosition().y > roadHeight - BUFFER_Y)
+                    {
+                        // Reset lane mark to the top with buffer
+                        mark.setPosition(mark.getPosition().x, mark.getPosition().y - roadHeight);
+                    }
                 }
 
+                // Move obstacles downward
+                for (auto &obstacle : obstacles)
+                {
+                    obstacle.move(0.0f, roadSpeed * deltaTime);
+                }
+
+                // <-- Modified: Remove obstacles that move beyond roadHeight - BUFFER_Y
                 obstacles.erase(remove_if(obstacles.begin(), obstacles.end(), [&](Sprite &o)
-                                          { return o.getPosition().y > screenSize.y; }),
+                                          { return o.getPosition().y > roadHeight - BUFFER_Y; }),
                                 obstacles.end());
 
+                // Check for collisions
                 for (auto &obstacle : obstacles)
                 {
                     if (car.getGlobalBounds().intersects(obstacle.getGlobalBounds()))
