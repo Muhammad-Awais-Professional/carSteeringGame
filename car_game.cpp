@@ -22,6 +22,7 @@ enum class GameState
     GameOver
 };
 
+const int GYRO_X_INDEX = 25; 
 const int GYRO_Y_INDEX = 26;
 const int GYRO_Z_INDEX = 27;
 
@@ -148,8 +149,8 @@ int main(int argc, char *argv[])
     car.setPosition(
         road.getPosition().x + roadWidth / 2.0f - carWidth / 2.0f,
         screenSize.y - carHeight - screenSize.y * 0.05f);
-
     
+
     vector<Texture> obstacleTextures;
     string obstacleFiles[] = { "assets/images/obstacle1.png", "assets/images/obstacle2.png", "assets/images/obstacle3.png" };
     for (const auto &file : obstacleFiles)
@@ -176,6 +177,7 @@ int main(int argc, char *argv[])
     Clock gameClock;
     bool gameOver = false;
 
+    double gyroX = 0.0;
     double gyroY = 0.0;
     double gyroZ = 0.0;
 
@@ -183,16 +185,18 @@ int main(int argc, char *argv[])
 
     const float calibrationDuration = 2.0f;
     Clock calibrationClock;
+    double gyroXOffset = 0.0;
     double gyroYOffset = 0.0;
     double gyroZOffset = 0.0;
     int calibrationSamples = 0;
     const int maxCalibrationSamples = 100;
 
+    deque<double> gyroXBuffer;
     deque<double> gyroYBuffer;
     deque<double> gyroZBuffer;
     const size_t bufferSize = 10;
 
-    const float movementScalingFactor = 200.0f;
+    const float movementScalingFactor = 300.0f;
     const float zoomSpeed = 0.1f;
 
     float currentZoom = 1.0f;
@@ -201,7 +205,7 @@ int main(int argc, char *argv[])
 
     GameState currentState = GameState::MainMenu;
 
-    
+
     Font font;
     if (!font.loadFromFile("arial.ttf"))
     {
@@ -213,7 +217,7 @@ int main(int argc, char *argv[])
     float buttonHeight = screenSize.y * 0.1f;
     float buttonSpacing = screenSize.y * 0.05f;
 
-    
+
     Button startButton(font, "Start", static_cast<unsigned int>(screenSize.y * 0.05f),
                        Color::White, Color::Blue,
                        Vector2f(buttonWidth, buttonHeight),
@@ -238,11 +242,11 @@ int main(int argc, char *argv[])
                               Vector2f((screenSize.x - buttonWidth) / 2.0f,
                                        screenSize.y * 0.4f + buttonHeight + buttonSpacing));
 
-    
+
     float score = 0.0f;
     float highScore = 0.0f;
 
-    
+
     ifstream highScoreFile("highscore.txt");
     if (highScoreFile.is_open())
     {
@@ -255,10 +259,15 @@ int main(int argc, char *argv[])
         highScore = 0.0f;
     }
 
-    
+
     Clock scoreClock;
 
-    float roadSpeed = 300.0f; 
+    float currentSpeed = 400.0f; 
+    const float maxSpeed = 800.0f; 
+    const float minSpeed = 200.0f; 
+    const float accelerationRate = 300.0f; 
+    const float decelerationRate = 300.0f; 
+    
 
     
 
@@ -275,7 +284,7 @@ int main(int argc, char *argv[])
     carMoveSound.setLoop(true); 
     carMoveSound.setVolume(50.0f); 
 
-    
+
     SoundBuffer carCollisionBuffer;
     if (!carCollisionBuffer.loadFromFile("assets/sounds/collision_sound.wav"))
     {
@@ -287,7 +296,7 @@ int main(int argc, char *argv[])
     carCollisionSound.setBuffer(carCollisionBuffer);
     carCollisionSound.setVolume(100.0f); 
 
-    
+
 
     while (window.isOpen())
     {
@@ -308,9 +317,11 @@ int main(int argc, char *argv[])
 
                         isCalibrating = true;
                         calibrationClock.restart();
+                        gyroXOffset = 0.0;
                         gyroYOffset = 0.0;
                         gyroZOffset = 0.0;
                         calibrationSamples = 0;
+                        gyroXBuffer.clear();
                         gyroYBuffer.clear();
                         gyroZBuffer.clear();
 
@@ -341,9 +352,11 @@ int main(int argc, char *argv[])
 
                         isCalibrating = true;
                         calibrationClock.restart();
+                        gyroXOffset = 0.0;
                         gyroYOffset = 0.0;
                         gyroZOffset = 0.0;
                         calibrationSamples = 0;
+                        gyroXBuffer.clear();
                         gyroYBuffer.clear();
                         gyroZBuffer.clear();
 
@@ -397,22 +410,25 @@ int main(int argc, char *argv[])
                     {
                         try
                         {
-
+                            double currentGyroX = -stod(values[GYRO_X_INDEX]);
                             double currentGyroY = -stod(values[GYRO_Y_INDEX]);
                             double currentGyroZ = -stod(values[GYRO_Z_INDEX]);
 
                             if (isCalibrating)
                             {
-
+                                gyroXOffset += currentGyroX;
                                 gyroYOffset += currentGyroY;
                                 gyroZOffset += currentGyroZ;
                                 calibrationSamples++;
                                 if (calibrationClock.getElapsedTime().asSeconds() >= calibrationDuration || calibrationSamples >= maxCalibrationSamples)
                                 {
+                                    gyroXOffset /= calibrationSamples;
                                     gyroYOffset /= calibrationSamples;
                                     gyroZOffset /= calibrationSamples;
                                     isCalibrating = false;
-                                    cout << "Calibration complete. GyroY Offset: " << gyroYOffset << ", GyroZ Offset: " << gyroZOffset << endl;
+                                    cout << "Calibration complete. GyroX Offset: " << gyroXOffset
+                                         << ", GyroY Offset: " << gyroYOffset
+                                         << ", GyroZ Offset: " << gyroZOffset << endl;
                                     currentState = GameState::Playing;
                                 }
                             }
@@ -487,12 +503,30 @@ int main(int argc, char *argv[])
                         {
                             try
                             {
-
+                                double currentGyroX = -stod(values[GYRO_X_INDEX]);
                                 double currentGyroY = -stod(values[GYRO_Y_INDEX]);
                                 double currentGyroZ = -stod(values[GYRO_Z_INDEX]);
 
+                                double calibratedGyroX = currentGyroX - gyroXOffset;
                                 double calibratedGyroY = currentGyroY - gyroYOffset;
                                 double calibratedGyroZ = currentGyroZ - gyroZOffset;
+
+                                gyroXBuffer.push_back(calibratedGyroX);
+                                if (gyroXBuffer.size() > bufferSize)
+                                {
+                                    gyroXBuffer.pop_front();
+                                }
+
+                                double sumX = 0.0;
+                                for (const auto &val : gyroXBuffer)
+                                {
+                                    sumX += val;
+                                }
+                                double averageGyroX = sumX / gyroXBuffer.size();
+
+                                averageGyroX = clamp(averageGyroX, -10.0, 10.0);
+
+                                gyroX = averageGyroX;
 
                                 gyroYBuffer.push_back(calibratedGyroY);
                                 if (gyroYBuffer.size() > bufferSize)
@@ -551,10 +585,24 @@ int main(int argc, char *argv[])
 
                 float deltaTime = gameClock.restart().asSeconds();
 
-                
+
                 score += deltaTime;
 
+
                 
+                if (gyroX > 0.5) 
+                {
+                    currentSpeed += accelerationRate * deltaTime * (gyroX / 10.0f); 
+                }
+                else if (gyroX < -0.5)
+                {
+                    currentSpeed -= decelerationRate * deltaTime * (abs(gyroX) / 10.0f);
+                }
+
+                
+                currentSpeed = clamp(currentSpeed, minSpeed, maxSpeed);
+
+
                 float movement = static_cast<float>(gyroZ) * movementScalingFactor * deltaTime;
                 car.move(movement, 0.0f);
 
@@ -564,7 +612,7 @@ int main(int argc, char *argv[])
                 if (carX > road.getPosition().x + roadWidth - car.getGlobalBounds().width)
                     car.setPosition(road.getPosition().x + roadWidth - car.getGlobalBounds().width, car.getPosition().y);
 
-                
+
                 currentZoom += static_cast<float>(gyroY) * zoomSpeed * deltaTime;
                 currentZoom = clamp(currentZoom, 0.5f, MAX_ZOOM_OUT); 
 
@@ -573,7 +621,7 @@ int main(int argc, char *argv[])
                 view.setCenter(screenSize.x / 2.0f, screenSize.y / 2.0f); 
                 window.setView(view);
 
-                
+
                 if (obstacleClock.getElapsedTime().asSeconds() > obstacleSpawnTime)
                 {
                     Sprite obstacle;
@@ -588,10 +636,10 @@ int main(int argc, char *argv[])
                     obstacleClock.restart();
                 }
 
-                
+
                 for (auto &mark : laneMarks)
                 {
-                    mark.move(0.0f, roadSpeed * deltaTime);
+                    mark.move(0.0f, currentSpeed * deltaTime);
                     if (mark.getPosition().y > roadHeight - BUFFER_Y)
                     {
                         
@@ -599,18 +647,18 @@ int main(int argc, char *argv[])
                     }
                 }
 
-                
+
                 for (auto &obstacle : obstacles)
                 {
-                    obstacle.move(0.0f, roadSpeed * deltaTime);
+                    obstacle.move(0.0f, currentSpeed * deltaTime);
                 }
 
-                
+
                 obstacles.erase(remove_if(obstacles.begin(), obstacles.end(), [&](Sprite &o)
                                           { return o.getPosition().y > roadHeight - BUFFER_Y; }),
                                 obstacles.end());
 
-                
+
                 for (auto &obstacle : obstacles)
                 {
                     if (car.getGlobalBounds().intersects(obstacle.getGlobalBounds()))
@@ -657,7 +705,7 @@ int main(int argc, char *argv[])
             for (auto &obstacle : obstacles)
                 window.draw(obstacle);
 
-            
+
             Text scoreText;
             scoreText.setFont(font);
             scoreText.setCharacterSize(static_cast<unsigned int>(screenSize.y * 0.03f));
@@ -666,7 +714,7 @@ int main(int argc, char *argv[])
             scoreText.setPosition(10.0f, 10.0f);
             window.draw(scoreText);
 
-            
+
             Text highScoreText;
             highScoreText.setFont(font);
             highScoreText.setCharacterSize(static_cast<unsigned int>(screenSize.y * 0.03f));
@@ -691,7 +739,7 @@ int main(int argc, char *argv[])
             for (auto &obstacle : obstacles)
                 window.draw(obstacle);
 
-            
+
             Text gameOverText("Game Over", font, static_cast<unsigned int>(screenSize.y * 0.08f));
             gameOverText.setFillColor(Color::Red);
 
@@ -701,7 +749,7 @@ int main(int argc, char *argv[])
             gameOverText.setPosition(screenSize.x / 2.0f, screenSize.y * 0.3f);
             window.draw(gameOverText);
 
-            
+
             Text finalScoreText;
             finalScoreText.setFont(font);
             finalScoreText.setCharacterSize(static_cast<unsigned int>(screenSize.y * 0.04f));
@@ -711,7 +759,7 @@ int main(int argc, char *argv[])
                                        screenSize.y * 0.4f - finalScoreText.getCharacterSize());
             window.draw(finalScoreText);
 
-            
+
             Text finalHighScoreText;
             finalHighScoreText.setFont(font);
             finalHighScoreText.setCharacterSize(static_cast<unsigned int>(screenSize.y * 0.04f));
@@ -740,7 +788,7 @@ int main(int argc, char *argv[])
             for (auto &obstacle : obstacles)
                 window.draw(obstacle);
 
-            
+
             Text title("Car Steering Game", font, static_cast<unsigned int>(screenSize.y * 0.1f));
             title.setFillColor(Color::Cyan);
 
@@ -750,7 +798,7 @@ int main(int argc, char *argv[])
             title.setPosition(screenSize.x / 2.0f, screenSize.y * 0.2f);
             window.draw(title);
 
-            
+
             Text menuHighScoreText;
             menuHighScoreText.setFont(font);
             menuHighScoreText.setCharacterSize(static_cast<unsigned int>(screenSize.y * 0.04f));
