@@ -1,5 +1,6 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
+#include <SFML/Audio.hpp> 
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -8,7 +9,7 @@
 #include <ctime>
 #include <deque>
 #include <algorithm>
-#include <fstream> // For file I/O
+#include <fstream> 
 
 using namespace std;
 using namespace sf;
@@ -109,7 +110,6 @@ int main(int argc, char *argv[])
 
     float roadWidth = screenSize.x * 0.5f;
 
-    
     const float BUFFER_Y = screenSize.y * BUFFER_Y_FACTOR; 
     float roadHeight = screenSize.y * MAX_ZOOM_OUT + 2.0f * BUFFER_Y; 
 
@@ -123,7 +123,6 @@ int main(int argc, char *argv[])
     vector<RectangleShape> laneMarks;
     float laneMarkX = road.getPosition().x + roadWidth / 2.0f - laneMarkWidth / 2.0f;
 
-    
     for (float y = -BUFFER_Y; y < roadHeight - BUFFER_Y; y += laneMarkHeight + laneMarkSpacing)
     {
         RectangleShape mark(Vector2f(laneMarkWidth, laneMarkHeight));
@@ -132,7 +131,7 @@ int main(int argc, char *argv[])
         laneMarks.push_back(mark);
     }
 
-    // Load Car Texture
+    
     Texture carTexture;
     if (!carTexture.loadFromFile("assets/images/car.png"))
     {
@@ -150,7 +149,7 @@ int main(int argc, char *argv[])
         road.getPosition().x + roadWidth / 2.0f - carWidth / 2.0f,
         screenSize.y - carHeight - screenSize.y * 0.05f);
 
-    // Load Multiple Obstacle Textures
+    
     vector<Texture> obstacleTextures;
     string obstacleFiles[] = { "assets/images/obstacle1.png", "assets/images/obstacle2.png", "assets/images/obstacle3.png" };
     for (const auto &file : obstacleFiles)
@@ -202,7 +201,7 @@ int main(int argc, char *argv[])
 
     GameState currentState = GameState::MainMenu;
 
-    // Load Font
+    
     Font font;
     if (!font.loadFromFile("arial.ttf"))
     {
@@ -214,7 +213,7 @@ int main(int argc, char *argv[])
     float buttonHeight = screenSize.y * 0.1f;
     float buttonSpacing = screenSize.y * 0.05f;
 
-    // Initialize Buttons
+    
     Button startButton(font, "Start", static_cast<unsigned int>(screenSize.y * 0.05f),
                        Color::White, Color::Blue,
                        Vector2f(buttonWidth, buttonHeight),
@@ -239,11 +238,11 @@ int main(int argc, char *argv[])
                               Vector2f((screenSize.x - buttonWidth) / 2.0f,
                                        screenSize.y * 0.4f + buttonHeight + buttonSpacing));
 
-    // Score Variables
+    
     float score = 0.0f;
     float highScore = 0.0f;
 
-    // Load High Score from File
+    
     ifstream highScoreFile("highscore.txt");
     if (highScoreFile.is_open())
     {
@@ -252,14 +251,43 @@ int main(int argc, char *argv[])
     }
     else
     {
-        // If file doesn't exist, initialize highScore to 0
+        
         highScore = 0.0f;
     }
 
-    // Clock for Score
+    
     Clock scoreClock;
 
     float roadSpeed = 300.0f; 
+
+    
+
+    
+    SoundBuffer carMoveBuffer;
+    if (!carMoveBuffer.loadFromFile("assets/sounds/car_move.wav"))
+    {
+        cout << "Failed to load car movement sound." << endl;
+        return 1;
+    }
+
+    Sound carMoveSound;
+    carMoveSound.setBuffer(carMoveBuffer);
+    carMoveSound.setLoop(true); 
+    carMoveSound.setVolume(50.0f); 
+
+    
+    SoundBuffer carCollisionBuffer;
+    if (!carCollisionBuffer.loadFromFile("assets/sounds/collision_sound.wav"))
+    {
+        cout << "Failed to load car collision sound." << endl;
+        return 1;
+    }
+
+    Sound carCollisionSound;
+    carCollisionSound.setBuffer(carCollisionBuffer);
+    carCollisionSound.setVolume(100.0f); 
+
+    
 
     while (window.isOpen())
     {
@@ -290,11 +318,15 @@ int main(int argc, char *argv[])
                         gameOver = false;
                         gameClock.restart();
                         obstacleClock.restart();
-                        score = 0.0f; // Reset score
-                        scoreClock.restart(); // Restart score clock
+                        score = 0.0f; 
+                        scoreClock.restart(); 
 
                         currentZoom = 1.0f;
                         window.setView(window.getDefaultView());
+
+                        
+                        carMoveSound.play();
+                        
                     }
                     if (quitButton.isClicked(mousePos))
                     {
@@ -319,11 +351,15 @@ int main(int argc, char *argv[])
                         gameOver = false;
                         gameClock.restart();
                         obstacleClock.restart();
-                        score = 0.0f; // Reset score
-                        scoreClock.restart(); // Restart score clock
+                        score = 0.0f; 
+                        scoreClock.restart(); 
 
                         currentZoom = 1.0f;
                         window.setView(window.getDefaultView());
+
+                        
+                        carMoveSound.play();
+                        
                     }
                     if (gameOverQuitButton.isClicked(mousePos))
                     {
@@ -356,7 +392,7 @@ int main(int argc, char *argv[])
                     }
 
                     vector<string> values = split(line, ',');
-                    
+
                     if (values.size() > GYRO_Z_INDEX)
                     {
                         try
@@ -446,7 +482,7 @@ int main(int argc, char *argv[])
                         }
 
                         vector<string> values = split(line, ',');
-                        
+
                         if (values.size() > GYRO_Z_INDEX)
                         {
                             try
@@ -507,14 +543,18 @@ int main(int argc, char *argv[])
                 {
                     cout << "Sensor server disconnected." << endl;
                     currentState = GameState::MainMenu;
+
+                    
+                    carMoveSound.stop();
+                    
                 }
 
                 float deltaTime = gameClock.restart().asSeconds();
 
-                // Update Score
+                
                 score += deltaTime;
 
-                // Movement based on Gyroscope
+                
                 float movement = static_cast<float>(gyroZ) * movementScalingFactor * deltaTime;
                 car.move(movement, 0.0f);
 
@@ -524,7 +564,7 @@ int main(int argc, char *argv[])
                 if (carX > road.getPosition().x + roadWidth - car.getGlobalBounds().width)
                     car.setPosition(road.getPosition().x + roadWidth - car.getGlobalBounds().width, car.getPosition().y);
 
-                // Zoom based on Gyroscope
+                
                 currentZoom += static_cast<float>(gyroY) * zoomSpeed * deltaTime;
                 currentZoom = clamp(currentZoom, 0.5f, MAX_ZOOM_OUT); 
 
@@ -533,11 +573,11 @@ int main(int argc, char *argv[])
                 view.setCenter(screenSize.x / 2.0f, screenSize.y / 2.0f); 
                 window.setView(view);
 
-                // Spawn Obstacles
+                
                 if (obstacleClock.getElapsedTime().asSeconds() > obstacleSpawnTime)
                 {
                     Sprite obstacle;
-                    // Randomly select an obstacle texture
+                    
                     int texIndex = rand() % obstacleTextures.size();
                     obstacle.setTexture(obstacleTextures[texIndex]);
 
@@ -548,29 +588,29 @@ int main(int argc, char *argv[])
                     obstacleClock.restart();
                 }
 
-                // Move Lane Marks
+                
                 for (auto &mark : laneMarks)
                 {
                     mark.move(0.0f, roadSpeed * deltaTime);
                     if (mark.getPosition().y > roadHeight - BUFFER_Y)
                     {
-                        // Reset position to loop lane marks
+                        
                         mark.setPosition(mark.getPosition().x, mark.getPosition().y - roadHeight);
                     }
                 }
 
-                // Move Obstacles
+                
                 for (auto &obstacle : obstacles)
                 {
                     obstacle.move(0.0f, roadSpeed * deltaTime);
                 }
 
-                // Remove Obstacles that are off-screen
+                
                 obstacles.erase(remove_if(obstacles.begin(), obstacles.end(), [&](Sprite &o)
                                           { return o.getPosition().y > roadHeight - BUFFER_Y; }),
                                 obstacles.end());
 
-                // Collision Detection
+                
                 for (auto &obstacle : obstacles)
                 {
                     if (car.getGlobalBounds().intersects(obstacle.getGlobalBounds()))
@@ -578,11 +618,17 @@ int main(int argc, char *argv[])
                         gameOver = true;
                         currentState = GameState::GameOver;
 
-                        // Update High Score if necessary
+                        
+                        carCollisionSound.play();
+
+                        
+                        carMoveSound.stop();
+
+                        
                         if (score > highScore)
                         {
                             highScore = score;
-                            // Save new high score to file
+                            
                             ofstream highScoreOut("highscore.txt");
                             if (highScoreOut.is_open())
                             {
@@ -611,7 +657,7 @@ int main(int argc, char *argv[])
             for (auto &obstacle : obstacles)
                 window.draw(obstacle);
 
-            // Display Current Score
+            
             Text scoreText;
             scoreText.setFont(font);
             scoreText.setCharacterSize(static_cast<unsigned int>(screenSize.y * 0.03f));
@@ -620,7 +666,7 @@ int main(int argc, char *argv[])
             scoreText.setPosition(10.0f, 10.0f);
             window.draw(scoreText);
 
-            // Display High Score
+            
             Text highScoreText;
             highScoreText.setFont(font);
             highScoreText.setCharacterSize(static_cast<unsigned int>(screenSize.y * 0.03f));
@@ -645,7 +691,7 @@ int main(int argc, char *argv[])
             for (auto &obstacle : obstacles)
                 window.draw(obstacle);
 
-            // Display Game Over Text
+            
             Text gameOverText("Game Over", font, static_cast<unsigned int>(screenSize.y * 0.08f));
             gameOverText.setFillColor(Color::Red);
 
@@ -655,7 +701,7 @@ int main(int argc, char *argv[])
             gameOverText.setPosition(screenSize.x / 2.0f, screenSize.y * 0.3f);
             window.draw(gameOverText);
 
-            // Display Final Score
+            
             Text finalScoreText;
             finalScoreText.setFont(font);
             finalScoreText.setCharacterSize(static_cast<unsigned int>(screenSize.y * 0.04f));
@@ -665,7 +711,7 @@ int main(int argc, char *argv[])
                                        screenSize.y * 0.4f - finalScoreText.getCharacterSize());
             window.draw(finalScoreText);
 
-            // Display High Score
+            
             Text finalHighScoreText;
             finalHighScoreText.setFont(font);
             finalHighScoreText.setCharacterSize(static_cast<unsigned int>(screenSize.y * 0.04f));
@@ -694,7 +740,7 @@ int main(int argc, char *argv[])
             for (auto &obstacle : obstacles)
                 window.draw(obstacle);
 
-            // Display Title
+            
             Text title("Car Steering Game", font, static_cast<unsigned int>(screenSize.y * 0.1f));
             title.setFillColor(Color::Cyan);
 
@@ -704,7 +750,7 @@ int main(int argc, char *argv[])
             title.setPosition(screenSize.x / 2.0f, screenSize.y * 0.2f);
             window.draw(title);
 
-            // Display High Score on Main Menu
+            
             Text menuHighScoreText;
             menuHighScoreText.setFont(font);
             menuHighScoreText.setCharacterSize(static_cast<unsigned int>(screenSize.y * 0.04f));
